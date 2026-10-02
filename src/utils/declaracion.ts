@@ -2,6 +2,10 @@ import JSZip from 'jszip'
 import type { Expediente } from '../domain/types'
 
 const RUTA_PLANTILLA = '/plantillas/ANEXO 18- DJ Asesor.docx'
+// Línea de firma de la plantilla: tabla con sangría 284 twips y ancho 3749 twips (1 twip = 635 EMU).
+const CENTRO_LINEA_FIRMA_EMU = Math.round((284 + 3749 / 2) * 635)
+// Distancia desde el inicio del párrafo "Firma" hasta donde descansa la base de la imagen.
+const BASE_FIRMA_EMU = 280000
 const MESES = [
   'enero',
   'febrero',
@@ -50,12 +54,19 @@ function reemplazarSDTs(xml: string, valores: Record<string, string>, dibujoFirm
     const textos = [...sdt.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((coincidencia) => coincidencia[1])
     const clave = normalizarClave(textos.join(''))
 
-    if (clave === 'FIRMA') return dibujoFirma
+    if (clave === 'FIRMA') {
+      // SDT a nivel de bloque: contiene un <w:p>; un <w:r> suelto en <w:body> es inválido para Word.
+      const parrafo = sdt.match(/<w:sdtContent>(<w:p[\s>][\s\S]*<\/w:p>)<\/w:sdtContent>/)
+      if (parrafo) return parrafo[1].replace(/<\/w:p>$/, `${dibujoFirma}</w:p>`)
+      return dibujoFirma
+    }
 
     const valor = valores[clave]
     if (valor === undefined) return sdt
 
-    return `<w:r>${extraerRPr(sdt)}<w:t xml:space="preserve">${valor}</w:t></w:r>`
+    // El espacio antes de "]" (p. ej. "[DNI_ASESOR ]") separa el valor del texto siguiente: se conserva.
+    const espacioFinal = textos.join('').match(/(\s*)\]\s*$/)?.[1] ?? ''
+    return `<w:r>${extraerRPr(sdt)}<w:t xml:space="preserve">${valor}${espacioFinal}</w:t></w:r>`
   })
 }
 
@@ -78,10 +89,15 @@ function dibujoFirma(anchoPx: number, altoPx: number, anchoMax = 220): string {
   const anchorId = Math.random().toString(16).slice(2, 10).toUpperCase()
   const editId = Math.random().toString(16).slice(2, 10).toUpperCase()
   return (
-    '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0" ' +
-    `wp14:anchorId="${anchorId}" wp14:editId="${editId}">` +
+    // Flotante (sin ajuste de texto): no altera el flujo y evita que la plantilla, de una sola hoja, se desborde.
+    '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" ' +
+    `behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1" wp14:anchorId="${anchorId}" wp14:editId="${editId}">` +
+    '<wp:simplePos x="0" y="0"/>' +
+    `<wp:positionH relativeFrom="column"><wp:posOffset>${CENTRO_LINEA_FIRMA_EMU - Math.round(cx / 2)}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${BASE_FIRMA_EMU - cy}</wp:posOffset></wp:positionV>` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
     '<wp:effectExtent l="0" t="0" r="0" b="0"/>' +
+    '<wp:wrapNone/>' +
     `<wp:docPr id="${idDoc}" name="Firma del asesor"/>` +
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
     '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
@@ -90,7 +106,7 @@ function dibujoFirma(anchoPx: number, altoPx: number, anchoMax = 220): string {
     `<pic:nvPicPr><pic:cNvPr id="${idPic}" name="firma.jpg"/><pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr></pic:nvPicPr>` +
     '<pic:blipFill><a:blip r:embed="rIdFirmaImg"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
     `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
-    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+    '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
   )
 }
 

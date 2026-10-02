@@ -120,7 +120,26 @@ describe('transformarDocumento', () => {
   it('inserta el dibujo de la firma en el documento', async () => {
     const xml = transformarDocumento(await xmlDePlantilla(), expedienteDePrueba(), new Date(2026, 4, 9))
     expect(xml).toContain('r:embed="rIdFirmaImg"')
-    expect(xml).toContain('wp:inline')
+    expect(xml).toContain('wp:anchor')
+  })
+
+  it('deja el dibujo de la firma dentro de un párrafo (no suelto en el body)', async () => {
+    const xml = transformarDocumento(await xmlDePlantilla(), expedienteDePrueba(), new Date(2026, 4, 9))
+    const pos = xml.indexOf('<w:drawing><wp:anchor')
+    const antes = xml.slice(0, pos)
+    expect(antes.lastIndexOf('<w:p ')).toBeGreaterThan(antes.lastIndexOf('</w:p>'))
+    expect(xml).not.toMatch(/<\/w:p><w:r>/)
+  })
+
+  it('la firma flota sin ajuste de texto para no desbordar la hoja', async () => {
+    const xml = transformarDocumento(await xmlDePlantilla(), expedienteDePrueba(), new Date(2026, 4, 9))
+    expect(xml).toContain('<wp:wrapNone/>')
+    expect(xml).not.toContain('<wp:inline')
+  })
+
+  it('conserva el espacio tras los placeholders que lo llevaban dentro del corchete', async () => {
+    const xml = transformarDocumento(await xmlDePlantilla(), expedienteDePrueba(), new Date(2026, 4, 9))
+    expect(textoPlano(xml)).toContain('70123456 En mi')
   })
 
   it('genera un docx válido con la imagen y la relación', async () => {
